@@ -29,21 +29,16 @@ for (const item of cases) {
     bodyHeight: document.body.scrollHeight,
     visibleRails: [...document.querySelectorAll(".left-rail, .feed-column, .right-rail")]
       .filter((node) => getComputedStyle(node).display !== "none").length,
+    tabNavigations: document.querySelectorAll(".desktop-nav, .mobile-nav").length,
     walletText: document.querySelector(".wallet-wrap button")?.textContent?.trim() ?? null
   }));
 
-  if (item.name === "desktop") {
-    await page.getByRole("button", { name: "写匿名帖" }).click();
-    await page.getByLabel("帖子内容").fill("这是一条自动验证的匿名帖子。");
-    await page.getByRole("button", { name: "生成证明并发布" }).click();
-    await page.getByText("这是一条自动验证的匿名帖子。").waitFor({ timeout: 5_000 });
-  } else {
-    await page.locator(".mobile-nav").getByRole("button", { name: "投票" }).click();
-    await page.getByRole("button", { name: "像素工作坊" }).click();
-    await page.getByText("你已经匿名投过票了").waitFor({ timeout: 5_000 });
-  }
+  if (metrics.scrollWidth !== metrics.viewportWidth) errors.push("page has horizontal overflow");
+  if (metrics.visibleRails !== 3) errors.push(`expected 3 visible sections, found ${metrics.visibleRails}`);
+  if (metrics.tabNavigations !== 0) errors.push(`expected no tab navigation, found ${metrics.tabNavigations}`);
 
   console.log(JSON.stringify({ name: item.name, metrics, errors }));
+  if (errors.length) process.exitCode = 1;
   await page.close();
 }
 

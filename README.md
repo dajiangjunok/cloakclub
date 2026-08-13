@@ -59,6 +59,10 @@ CloakClub 是一个基于 Aleo 测试网的隐私成员社区。当前版本不�
 
 每次执行后应等待交易 accepted，再进行下一步。不要复用 `member_secret`。
 
+日常成员签发不需要继续使用部署脚本。连接 `community_admin` mapping 中的管理员钱包后，页面“我的隐私身份”区域会显示“成员管理”入口；输入成员 Aleo 地址即可由浏览器生成独立随机 `member_secret`，并通过钱包签名执行同一个 `issue_membership` transition。随机密钥只进入加密给成员的私有 `Member` record，不写入 Supabase 或浏览器存储。
+
+当前合约只记录凭证发行总数，不公开成员地址，也没有撤销或地址去重功能。向同一地址重复签发会产生另一份有效凭证；如需邀请审批、成员名册或撤销能力，需要在下一版合约中增加相应状态和 transition 后重新部署。
+
 ## 2. 配置 Supabase
 
 安装 Supabase CLI 并登录，然后在仓库根目录执行：
@@ -117,7 +121,7 @@ npm run dev
 
 访问 `http://localhost:3000`，连接设置为 Aleo Testnet 的 Shield Wallet 或 Leo Wallet。发帖/投票需要钱包中有当前 program 发出的未消费 `Member` record 和足够的测试网 credits。
 
-`NEXT_PUBLIC_ALEO_TX_FEE` 的单位是 ALEO credits，不是 microcredits。`0.1` 只是初始上限，请以钱包预估和测试网实际费用为准调整，不要填写 `100000`。
+`NEXT_PUBLIC_ALEO_TX_FEE` 的配置单位是 ALEO credits。前端会根据钱包适配器转换参数：Leo Wallet 直接接收 credits，Shield 1.29 接收整数 microcredits，因此配置 `0.1` 时会向 Shield 传入 `100000`。请以钱包预估和测试网实际费用为准调整，不要在环境变量中填写 `100000`。
 
 ## 验证
 

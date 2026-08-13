@@ -7,4 +7,6 @@ out/
 contracts/**/build/
 .DS_Store
 .tools
+supabase/.temp/
 project_idea.md
+docs/

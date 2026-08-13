@@ -2,25 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
-import { WalletMultiButton } from "@provablehq/aleo-wallet-adaptor-react-ui";
 import {
   Check,
   ChevronRight,
   CircleHelp,
   Clock3,
+  Crown,
   Heart,
-  Home,
   KeyRound,
   LockKeyhole,
   MessageSquareText,
   Plus,
-  Radio,
   RefreshCw,
   Send,
   ShieldCheck,
   Sparkles,
   TreePine,
   Users,
+  UserPlus,
   Vote,
   X
 } from "lucide-react";
@@ -30,8 +29,21 @@ import { getRecordPlaintext, shortId, textToField } from "@/lib/aleo";
 import { addPostReaction, loadCommunity, loadPosts, loadProposalMetadata, publishVerifiedPost } from "@/lib/supabase";
 import type { ActionState, Community, Post, Proposal } from "@/lib/types";
 import { PixelTreehouse } from "./pixel-treehouse";
+import { WalletButton } from "./wallet-button";
 
 const INITIAL_ACTION: ActionState = { phase: "idle", message: "" };
+type PendingPost = { body: string; commitment: string; transactionId: string };
+
+function randomField(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let value = 0n;
+  for (const byte of bytes) value = value * 256n + BigInt(byte);
+  return `${value}field`;
+}
+
+function isAleoAddress(value: string): boolean {
+  return /^aleo1[023456789acdefghjklmnpqrstuvwxyz]{58}$/.test(value);
+}
 
 function relativeTime(value: string): string {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
@@ -60,23 +72,27 @@ function formatRecord(record: unknown): string | null {
 }
 
 export function CloakClubApp() {
-  const { connected, address, executeTransaction, requestRecords, requestTransactionHistory, transactionStatus } = useWallet();
+  const { connected, address, wallet, executeTransaction, requestRecords, requestTransactionHistory, transactionStatus } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [community, setCommunity] = useState<Community | null>(null);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [memberCount, setMemberCount] = useState(0);
+  const [communityAdmin, setCommunityAdmin] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [recipientAddress, setRecipientAddress] = useState("");
   const [body, setBody] = useState("");
   const [action, setAction] = useState<ActionState>(INITIAL_ACTION);
   const [votedAddress, setVotedAddress] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"home" | "posts" | "vote">("home");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [pendingPost, setPendingPost] = useState<PendingPost | null>(null);
 
   const totalVotes = (proposal?.yes ?? 0) + (proposal?.no ?? 0);
   const yesPercent = totalVotes && proposal ? Math.round((proposal.yes / totalVotes) * 100) : 0;
   const hasVoted = Boolean(address && votedAddress === address);
+  const isAdmin = Boolean(address && communityAdmin && address.toLowerCase() === communityAdmin.toLowerCase());
 
   const refreshData = useCallback(async () => {
     const missing = validatePublicConfig();
@@ -93,6 +109,7 @@ export function CloakClubApp() {
       setCommunity(communityData);
       setPosts(postData);
       setMemberCount(chain.memberCount);
+      setCommunityAdmin(chain.communityAdmin);
       setProposal({ ...proposalMetadata, yes: chain.yes, no: chain.no, isOpen: chain.isOpen });
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "无法读取测试网数据");
@@ -124,13 +141,25 @@ export function CloakClubApp() {
 
   async function submitTransition(functionName: string, inputs: string[]) {
     if (!connected) throw new Error("请先连接 Shield 或 Leo Wallet，再提交到 Aleo 测试网。");
-    const result = await executeTransaction({
-      program: ALEO_CONFIG.programId,
-      function: functionName,
-      inputs,
-      fee: ALEO_CONFIG.fee,
-      privateFee: false
-    });
+    // Shield 1.29 expects an integer microcredit fee; Leo expects ALEO credits.
+    const fee = wallet?.adapter.name === "Shield Wallet"
+      ? Math.round(ALEO_CONFIG.fee * 1_000_000)
+      : ALEO_CONFIG.fee;
+    let result;
+    try {
+      result = await executeTransaction({
+        program: ALEO_CONFIG.programId,
+        function: functionName,
+        inputs,
+        fee,
+        privateFee: false
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "Invalid transaction payload") {
+        throw new Error("钱包拒绝了交易参数，请确认 Shield 已更新到兼容版本并重新连接。");
+      }
+      throw error;
+    }
     if (!result?.transactionId) throw new Error("钱包没有返回交易 ID，请检查签名请求。");
     return result.transactionId;
   }
@@ -161,14 +190,20 @@ export function CloakClubApp() {
     if (!cleanBody) return;
 
     setAction({ phase: "proving", message: "正在生成零知识证明，请在钱包中确认..." });
+    let confirmedPost: PendingPost | null = null;
     try {
       const commitment = await textToField(cleanBody);
       const record = await membershipRecord();
       const temporaryId = await submitTransition("publish_post", [record, APP_CONFIG.communityId, commitment]);
       setAction({ phase: "submitted", message: "交易已提交，正在等待 Aleo 测试网确认...", transactionId: temporaryId });
       const transactionId = await waitForConfirmation(temporaryId);
-      await publishVerifiedPost({ body: cleanBody, commitment, transactionId });
+      const verifiedPost = { body: cleanBody, commitment, transactionId };
+      confirmedPost = verifiedPost;
+      setPendingPost(verifiedPost);
+      setAction({ phase: "submitted", message: "链上交易已确认，正在保存公开正文...", transactionId });
+      await publishVerifiedPost(verifiedPost);
       await refreshData();
+      setPendingPost(null);
       setBody("");
       setComposerOpen(false);
       setAction({
@@ -177,7 +212,37 @@ export function CloakClubApp() {
         transactionId
       });
     } catch (error) {
-      setAction({ phase: "error", message: error instanceof Error ? error.message : "发布失败，请重试。" });
+      const recoverablePost = confirmedPost ?? pendingPost;
+      setAction({
+        phase: "error",
+        message: recoverablePost
+          ? "链上发布已成功，但正文尚未保存。请勿再次生成链上交易，部署 verify-post 后点击“重试保存正文”。"
+          : error instanceof Error ? error.message : "发布失败，请重试。",
+        transactionId: recoverablePost?.transactionId
+      });
+    }
+  }
+
+  async function retryPendingPost() {
+    if (!pendingPost) return;
+    setAction({ phase: "submitted", message: "正在重新验证链上交易并保存正文...", transactionId: pendingPost.transactionId });
+    try {
+      await publishVerifiedPost(pendingPost);
+      await refreshData();
+      setPendingPost(null);
+      setBody("");
+      setComposerOpen(false);
+      setAction({
+        phase: "confirmed",
+        message: "正文已通过链上交易验证并保存。",
+        transactionId: pendingPost.transactionId
+      });
+    } catch (error) {
+      setAction({
+        phase: "error",
+        message: error instanceof Error ? error.message : "保存正文失败，请稍后重试。",
+        transactionId: pendingPost.transactionId
+      });
     }
   }
 
@@ -202,6 +267,39 @@ export function CloakClubApp() {
     }
   }
 
+  async function issueMembership(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const recipient = recipientAddress.trim().toLowerCase();
+    if (!isAdmin) {
+      setAction({ phase: "error", message: "当前钱包不是该社区的链上管理员。" });
+      return;
+    }
+    if (!isAleoAddress(recipient)) {
+      setAction({ phase: "error", message: "请输入有效的 Aleo 地址。" });
+      return;
+    }
+
+    setAction({ phase: "proving", message: "正在创建私有成员凭证，请在钱包中确认..." });
+    try {
+      const temporaryId = await submitTransition("issue_membership", [
+        APP_CONFIG.communityId,
+        recipient,
+        randomField()
+      ]);
+      setAction({ phase: "submitted", message: "成员凭证已提交，正在等待测试网确认...", transactionId: temporaryId });
+      const transactionId = await waitForConfirmation(temporaryId);
+      await refreshData();
+      setRecipientAddress("");
+      setAction({
+        phase: "confirmed",
+        message: `已向 ${shortId(recipient, 10, 8)} 签发私有成员凭证。`,
+        transactionId
+      });
+    } catch (error) {
+      setAction({ phase: "error", message: error instanceof Error ? error.message : "成员凭证签发失败。" });
+    }
+  }
+
   async function addReaction(id: string) {
     try {
       await addPostReaction(id);
@@ -221,27 +319,31 @@ export function CloakClubApp() {
   return (
     <main className="site-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="CloakClub 首页">
-          <span className="brand-mark"><KeyRound size={19} /></span>
-          <span>CLOAK<span>CLUB</span></span>
-        </a>
-        <nav className="desktop-nav" aria-label="主导航">
-          <button className={activeView === "home" ? "active" : ""} onClick={() => setActiveView("home")}><Home size={16} />树屋</button>
-          <button className={activeView === "posts" ? "active" : ""} onClick={() => setActiveView("posts")}><MessageSquareText size={16} />匿名帖</button>
-          <button className={activeView === "vote" ? "active" : ""} onClick={() => setActiveView("vote")}><Vote size={16} />投票</button>
-        </nav>
-        <div className="wallet-wrap"><WalletMultiButton /></div>
+        <div className="header-identity">
+          <a className="brand" href="#top" aria-label="返回 CloakClub 页面顶部">
+            <span className="brand-mark"><KeyRound size={19} /></span>
+            <span>CLOAK<span>CLUB</span></span>
+          </a>
+          <span className="header-divider" aria-hidden="true" />
+          <div className="workspace-context">
+            <TreePine size={17} />
+            <span><small>当前树屋</small><strong>{community.name}</strong></span>
+          </div>
+        </div>
+        <div className="header-tools">
+          <div className="network-status" title={`${ALEO_CONFIG.programId} · 链上状态已同步`}>
+            <i aria-hidden="true" />
+            <span>Aleo 测试网</span>
+          </div>
+          <button className="header-refresh" type="button" onClick={() => void refreshData()} title="刷新链上数据" aria-label="刷新链上数据">
+            <RefreshCw size={17} />
+          </button>
+          <div className="wallet-wrap"><WalletButton /></div>
+        </div>
       </header>
 
-      <div className="mode-ribbon" role="status">
-        <Radio size={15} />
-        <strong>Aleo 测试网</strong>
-        <span>{ALEO_CONFIG.programId} · 链上状态已同步</span>
-        <button onClick={() => void refreshData()} title="刷新链上数据"><RefreshCw size={14} /></button>
-      </div>
-
       <div className="dashboard" id="top">
-        <aside className={`left-rail ${activeView === "home" ? "mobile-active" : ""}`}>
+        <aside className="left-rail">
           <section className="club-intro">
             <PixelTreehouse />
             <div className="club-title-row">
@@ -265,10 +367,11 @@ export function CloakClubApp() {
             <div className="privacy-meter"><i /><i /><i /><i /><i /></div>
             <div className="privacy-score"><span>网络</span><strong>TESTNET</strong></div>
             <button className="text-button" onClick={() => setPrivacyOpen(true)}>查看保护详情 <ChevronRight size={15} /></button>
+            {isAdmin && <button className="admin-entry" onClick={() => setAdminOpen(true)}><Crown size={15} />成员管理<ChevronRight size={15} /></button>}
           </section>
         </aside>
 
-        <section className={`feed-column ${activeView === "posts" ? "mobile-active" : ""}`}>
+        <section className="feed-column">
           <div className="feed-heading">
             <div><span className="eyebrow">MEMBERS ONLY</span><h2>树洞动态</h2></div>
             <button className="primary-button" onClick={() => setComposerOpen(true)}><Plus size={18} />写匿名帖</button>
@@ -300,7 +403,7 @@ export function CloakClubApp() {
           </div>
         </section>
 
-        <aside className={`right-rail ${activeView === "vote" ? "mobile-active" : ""}`}>
+        <aside className="right-rail">
           <section className="proposal-board">
             <div className="board-pin pin-left" /><div className="board-pin pin-right" />
             <div className="proposal-kicker"><Vote size={17} />正在投票</div>
@@ -334,16 +437,10 @@ export function CloakClubApp() {
         </aside>
       </div>
 
-      <nav className="mobile-nav" aria-label="移动端导航">
-        <button className={activeView === "home" ? "active" : ""} onClick={() => setActiveView("home")}><Home size={20} /><span>树屋</span></button>
-        <button className={activeView === "posts" ? "active" : ""} onClick={() => setActiveView("posts")}><MessageSquareText size={20} /><span>匿名帖</span></button>
-        <button className={activeView === "vote" ? "active" : ""} onClick={() => setActiveView("vote")}><Vote size={20} /><span>投票</span></button>
-      </nav>
-
       {action.phase !== "idle" && (
         <div className={`toast toast-${action.phase}`} role="status">
           <span className="toast-icon">{action.phase === "proving" ? <span className="loader" /> : action.phase === "error" ? <X size={18} /> : <Check size={18} />}</span>
-          <div><strong>{action.phase === "proving" ? "生成证明" : action.phase === "error" ? "操作未完成" : action.phase === "confirmed" ? "链上已确认" : "操作已提交"}</strong><p>{action.message}</p>{action.transactionId && <a href={`${ALEO_CONFIG.explorerUrl}/transaction/${action.transactionId}`} target="_blank" rel="noreferrer"><code>{shortId(action.transactionId, 12, 8)}</code></a>}</div>
+          <div><strong>{action.phase === "proving" ? "生成证明" : action.phase === "error" ? "操作未完成" : action.phase === "confirmed" ? "链上已确认" : "操作已提交"}</strong><p>{action.message}</p>{action.transactionId && <a href={`${ALEO_CONFIG.explorerUrl}/transaction/${action.transactionId}`} target="_blank" rel="noreferrer"><code>{shortId(action.transactionId, 12, 8)}</code></a>}{pendingPost && action.phase === "error" && <button className="toast-retry" type="button" onClick={() => void retryPendingPost()}><RefreshCw size={14} />重试保存正文</button>}</div>
           <button aria-label="关闭通知" title="关闭" onClick={() => setAction(INITIAL_ACTION)}><X size={17} /></button>
         </div>
       )}
@@ -360,7 +457,7 @@ export function CloakClubApp() {
               <label htmlFor="post-body">帖子内容</label>
               <textarea id="post-body" autoFocus maxLength={280} value={body} onChange={(event) => setBody(event.target.value)} placeholder="今天想和树屋分享什么？" />
               <div className="form-meta"><span><ShieldCheck size={14} />通过 Aleo 私有凭证验证</span><b>{body.length}/280</b></div>
-              <button className="primary-button full-button" disabled={!body.trim() || action.phase === "proving" || action.phase === "submitted"}><Send size={18} />生成证明并发布</button>
+              <button className="primary-button full-button" disabled={!body.trim() || Boolean(pendingPost) || action.phase === "proving" || action.phase === "submitted"}><Send size={18} />生成证明并发布</button>
             </form>
           </section>
         </div>
@@ -378,6 +475,37 @@ export function CloakClubApp() {
               <div><span className="status-dot public" /><strong>公开验证</strong><p>帖子内容承诺、投票选择、总票数与防重复 nullifier。</p></div>
             </div>
             <p className="privacy-footnote">MVP 采用“身份隐私、选择公开”的设计。任何人能核验结果，但无法从投票记录还原成员身份。</p>
+          </section>
+        </div>
+      )}
+
+      {adminOpen && isAdmin && (
+        <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setAdminOpen(false)}>
+          <section className="modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+            <button className="icon-button close-button" aria-label="关闭" title="关闭" onClick={() => setAdminOpen(false)}><X size={20} /></button>
+            <span className="modal-icon mint"><Crown size={24} /></span>
+            <span className="eyebrow">ONCHAIN ADMIN</span>
+            <h2 id="admin-title">成员管理</h2>
+            <div className="admin-summary">
+              <div><span>链上管理员</span><code>{shortId(communityAdmin ?? "", 12, 10)}</code></div>
+              <div><span>已发行凭证</span><strong>{memberCount}</strong></div>
+            </div>
+            <form onSubmit={issueMembership}>
+              <label htmlFor="member-address">成员 Aleo 地址</label>
+              <input
+                id="member-address"
+                autoComplete="off"
+                spellCheck={false}
+                value={recipientAddress}
+                onChange={(event) => setRecipientAddress(event.target.value)}
+                placeholder="aleo1..."
+              />
+              <div className="form-meta"><span><ShieldCheck size={14} />TESTNET · 私有 Member record</span><b>{recipientAddress.trim().length}/63</b></div>
+              <button className="primary-button full-button" disabled={!isAleoAddress(recipientAddress.trim().toLowerCase()) || action.phase === "proving" || action.phase === "submitted"}>
+                <UserPlus size={18} />签发成员凭证
+              </button>
+            </form>
+            <p className="admin-footnote">当前合约仅公开凭证发行总数，不公开成员地址。重复地址会收到另一份独立凭证。</p>
           </section>
         </div>
       )}

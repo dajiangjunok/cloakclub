@@ -24,17 +24,23 @@ function parseBool(value: string | null): boolean {
   return value?.replaceAll('"', "") === "true";
 }
 
+function parseString(value: string | null): string | null {
+  return value?.replaceAll('"', "") || null;
+}
+
 export async function loadChainState() {
-  const [yes, no, isOpen, memberCount] = await Promise.all([
+  const [yes, no, isOpen, memberCount, communityAdmin] = await Promise.all([
     getMappingValue("yes_votes", APP_CONFIG.proposalId),
     getMappingValue("no_votes", APP_CONFIG.proposalId),
     getMappingValue("proposal_open", APP_CONFIG.proposalId),
-    getMappingValue("member_count", APP_CONFIG.communityId)
+    getMappingValue("member_count", APP_CONFIG.communityId),
+    getMappingValue("community_admin", APP_CONFIG.communityId)
   ]);
   return {
     yes: parseU64(yes),
     no: parseU64(no),
     isOpen: parseBool(isOpen),
-    memberCount: parseU64(memberCount)
+    memberCount: parseU64(memberCount),
+    communityAdmin: parseString(communityAdmin)
   };
 }

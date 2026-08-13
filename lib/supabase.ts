@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, FunctionsFetchError, FunctionsHttpError } from "@supabase/supabase-js";
 import { APP_CONFIG } from "./config";
 import type { Community, Post, Proposal } from "./types";
 
@@ -84,6 +84,21 @@ export async function publishVerifiedPost(payload: {
   const { error } = await client().functions.invoke("verify-post", {
     body: { ...payload, communityId: APP_CONFIG.communityId }
   });
+  if (error instanceof FunctionsFetchError) {
+    throw new Error("无法访问 verify-post Edge Function。请确认该函数已部署到当前 Supabase 项目。", { cause: error });
+  }
+  if (error instanceof FunctionsHttpError) {
+    const response = error.context as Response;
+    let message = "verify-post 验证失败";
+    try {
+      const result = await response.clone().json() as { error?: unknown };
+      if (typeof result.error === "string") message = result.error;
+    } catch {
+      // Keep the status-based fallback when the gateway does not return JSON.
+    }
+    if (response.status === 404) message = "verify-post Edge Function 尚未部署到当前 Supabase 项目。";
+    throw new Error(`${message} (${response.status})`, { cause: error });
+  }
   if (error) throw error;
 }
 

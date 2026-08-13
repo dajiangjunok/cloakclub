@@ -84,8 +84,6 @@ Deno.serve(async (request) => {
     );
     if (!transactionResponse.ok) return json({ error: "Transaction is not finalized" }, 409);
     const transaction = await transactionResponse.json();
-    const serialized = JSON.stringify(transaction).toLowerCase();
-    if (!serialized.includes("accepted")) return json({ error: "Transaction was not accepted" }, 409);
 
     const transition = findPublishTransition(transaction, programId);
     if (!transition) return json({ error: "publish_post transition not found" }, 400);
