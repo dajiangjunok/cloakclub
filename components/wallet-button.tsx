@@ -7,17 +7,19 @@ import { WalletReadyState, type WalletName } from "@provablehq/aleo-wallet-stand
 import { Network } from "@provablehq/aleo-types";
 import { Check, ChevronDown, LoaderCircle, LogOut, WalletCards, X } from "lucide-react";
 import { shortId } from "@/lib/aleo";
+import { useLanguage } from "./language-provider";
 
-function connectionMessage(error: unknown): string {
+function connectionMessage(error: unknown, messages: ReturnType<typeof useLanguage>["messages"]): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.toLowerCase().includes("connect request is already in progress")) {
-    return "钱包中已有未完成的连接请求。请打开钱包扩展完成或取消；若没有弹窗，请重载扩展和本页面后再试。";
+    return messages.connectionInProgress;
   }
-  if (message.toLowerCase().includes("user rejected")) return "你已取消钱包连接。";
-  return message || "钱包连接失败，请检查扩展后重试。";
+  if (message.toLowerCase().includes("user rejected")) return messages.connectionCancelled;
+  return message || messages.connectionFailed;
 }
 
 export function WalletButton() {
+  const { messages } = useLanguage();
   const {
     wallets,
     wallet,
@@ -67,7 +69,7 @@ export function WalletButton() {
       return;
     }
     if (![WalletReadyState.INSTALLED, WalletReadyState.LOADABLE].includes(wallet.readyState)) {
-      setError(`${wallet.adapter.name} 扩展尚未安装或未被浏览器检测到。`);
+      setError(messages.extensionUnavailable(wallet.adapter.name));
       if (wallet.adapter.url) window.open(wallet.adapter.url, "_blank", "noopener,noreferrer");
       return;
     }
@@ -79,7 +81,7 @@ export function WalletButton() {
     try {
       await request;
     } catch (connectError) {
-      setError(connectionMessage(connectError));
+      setError(connectionMessage(connectError, messages));
     } finally {
       connectRequest.current = null;
       setRequestPending(false);
@@ -93,17 +95,17 @@ export function WalletButton() {
       await disconnect();
       setMenuOpen(false);
     } catch (disconnectError) {
-      setError(disconnectError instanceof Error ? disconnectError.message : "断开钱包失败，请重试。");
+      setError(disconnectError instanceof Error ? disconnectError.message : messages.disconnectFailed);
     }
   }
 
   const buttonLabel = busy
-    ? connecting || reconnecting ? "连接中..." : "断开中..."
+    ? connecting || reconnecting ? messages.connecting : messages.disconnecting
     : connected && address
       ? shortId(address, 6, 4)
       : wallet
-        ? `连接 ${wallet.adapter.name}`
-        : "选择钱包";
+        ? messages.connectWallet(wallet.adapter.name)
+        : messages.selectWallet;
 
   return (
     <div className="wallet-control" ref={rootRef}>
@@ -125,8 +127,8 @@ export function WalletButton() {
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
             disabled={busy}
-            title="更换钱包"
-            aria-label="更换钱包"
+            title={messages.changeWallet}
+            aria-label={messages.changeWallet}
             aria-expanded={menuOpen}
           >
             <ChevronDown size={16} />
@@ -135,10 +137,10 @@ export function WalletButton() {
       </div>
 
       {menuOpen && (
-        <div className="wallet-menu" role="dialog" aria-label="Aleo 钱包">
+        <div className="wallet-menu" role="dialog" aria-label={messages.walletDialog}>
           <div className="wallet-menu-heading">
-            <strong>{connected ? "钱包账户" : "选择 Aleo 钱包"}</strong>
-            <button type="button" onClick={() => setMenuOpen(false)} aria-label="关闭钱包菜单"><X size={15} /></button>
+            <strong>{connected ? messages.walletAccount : messages.selectAleoWallet}</strong>
+            <button type="button" onClick={() => setMenuOpen(false)} aria-label={messages.closeWalletMenu}><X size={15} /></button>
           </div>
           {connected ? (
             <>
@@ -147,7 +149,7 @@ export function WalletButton() {
                 <code>{address}</code>
               </div>
               <button className="wallet-menu-action danger" type="button" onClick={() => void disconnectWallet()}>
-                <LogOut size={16} />断开连接
+                <LogOut size={16} />{messages.disconnect}
               </button>
             </>
           ) : (
@@ -164,7 +166,7 @@ export function WalletButton() {
                     {candidate.adapter.icon
                       ? <Image src={candidate.adapter.icon} alt="" width={27} height={27} unoptimized />
                       : <WalletCards size={24} />}
-                    <span><strong>{candidate.adapter.name}</strong><small>{available ? "已检测到" : "未安装"}</small></span>
+                    <span><strong>{candidate.adapter.name}</strong><small>{available ? messages.detected : messages.notInstalled}</small></span>
                     {wallet?.adapter.name === candidate.adapter.name && <Check size={17} />}
                   </button>
                 );

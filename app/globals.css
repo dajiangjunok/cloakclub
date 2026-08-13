@@ -67,6 +67,10 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 .workspace-context strong { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font: 900 13px/1 "Courier New", monospace; }
 .network-status { min-height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: var(--ink-soft); background: var(--sky-soft); border: 1px solid rgba(36,51,75,.28); font-size: 10px; font-weight: 800; }
 .network-status i { width: 8px; height: 8px; background: var(--mint); border: 2px solid var(--line); }
+.language-switch { height: 34px; display: flex; align-items: center; padding: 3px; border: 2px solid var(--line); background: var(--paper); }
+.language-switch > svg { margin: 0 5px 0 3px; color: var(--mint-dark); }
+.language-switch button { height: 24px; min-width: 31px; padding: 0 6px; border: 0; background: transparent; cursor: pointer; color: var(--ink-soft); font: 800 9px/1 "Courier New", monospace; }
+.language-switch button.active { color: var(--ink); background: var(--yellow); box-shadow: inset 0 0 0 1px var(--line); }
 .header-refresh { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; color: var(--mint-dark); background: transparent; border: 0; cursor: pointer; }
 .header-refresh:hover { background: var(--yellow); outline: 2px solid var(--line); }
 .wallet-wrap { justify-self: end; }
@@ -249,6 +253,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
   .brand-mark { width: 32px; height: 32px; }
   .header-divider, .workspace-context, .network-status { display: none; }
   .header-tools { gap: 4px; }
+  .language-switch > svg { display: none; }
   .header-refresh { width: 30px; height: 30px; }
   .wallet-wrap .wallet-adapter-button { height: 38px; max-width: 160px; padding: 0 9px; font-size: 11px; }
   .wallet-main-button span { max-width: 105px; }
@@ -265,6 +270,8 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
   .topbar { padding: 0 12px; }
   .brand { gap: 8px; font-size: 15px; }
   .header-refresh { display: none; }
+  .language-switch { height: 32px; }
+  .language-switch button { min-width: 28px; padding: 0 4px; }
   .wallet-wrap .wallet-adapter-button { max-width: 142px; }
   .feed-heading h2 { font-size: 22px; }
   .feed-heading .primary-button { min-height: 38px; padding: 7px 10px; font-size: 11px; }
@@ -279,6 +286,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 
 @media (max-width: 360px) {
   .brand > span:last-child { display: none; }
+  .wallet-wrap .wallet-adapter-button { max-width: 116px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
