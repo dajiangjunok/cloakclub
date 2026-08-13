@@ -27,31 +27,34 @@ CloakClub 是一个基于 Aleo 测试网的隐私成员社区。当前版本不�
 
 环境要求：Node.js 20+、npm、Leo 4.2+。
 
-先把 `contracts/cloakclub/program.json`、`contracts/cloakclub/src/main.leo` 中的 `cloakclub_v1.aleo` 全部替换为你的唯一 program ID，然后：
+当前合约 Program ID 为 `cloakclub_four_2026.aleo`。在仓库根目录被 Git 忽略的 `.env.aleo-deploy` 中填写仅供 Leo CLI 使用的 `PRIVATE_KEY`。不要把私钥放入 Next.js 的 `.env.local`。然后：
+
+部署脚本强制使用 Leo quiet 模式，因为 Leo 4.2 在普通模式下会输出已加载的环境变量。任何曾出现在终端或 CI 日志中的私钥都必须作废并更换。
 
 ```bash
-cd contracts/cloakclub
-leo build --network testnet
-leo deploy --network testnet --endpoint https://api.explorer.provable.com/v1
+./scripts/leo-testnet.sh build
+./scripts/deploy-testnet.sh
 ```
+
+`--base-fees` 和 `--priority-fees` 的单位都是 microcredits。当前测试网节点要求的部署基础费为 `8.710748` credits；项目内的补丁版 Leo 会使用该显式基础费，并额外加入 `0.1` credit 优先费，总费用约为 `8.810748` credits。部署账户应至少准备 10 credits，建议留有更多余额供社区、提案和成员凭证初始化。
 
 部署私钥只应通过 Leo 的本地账户机制或当前终端临时环境提供，不要写入项目文件。
 
 生成两个不重复的 field 作为 `COMMUNITY_ID` 和 `PROPOSAL_ID`，再由部署账户执行：
 
 ```bash
-leo execute create_community <COMMUNITY_ID>field --network testnet --broadcast --yes
-leo execute create_proposal <COMMUNITY_ID>field <PROPOSAL_ID>field --network testnet --broadcast --yes
+./scripts/leo-testnet.sh execute create_community <COMMUNITY_ID>field --broadcast --yes
+./scripts/leo-testnet.sh execute create_proposal <COMMUNITY_ID>field <PROPOSAL_ID>field --broadcast --yes
 ```
 
 为每位成员发行凭证：
 
 ```bash
-leo execute issue_membership \
+./scripts/leo-testnet.sh execute issue_membership \
   <COMMUNITY_ID>field \
   <MEMBER_ALEO_ADDRESS> \
   <UNIQUE_RANDOM_MEMBER_SECRET>field \
-  --network testnet --broadcast --yes
+  --broadcast --yes
 ```
 
 每次执行后应等待交易 accepted，再进行下一步。不要复用 `member_secret`。

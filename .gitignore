@@ -6,3 +6,5 @@ out/
 !.env.example
 contracts/**/build/
 .DS_Store
+.tools
+project_idea.md

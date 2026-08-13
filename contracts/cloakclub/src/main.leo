@@ -1,4 +1,4 @@
-program cloakclub_v1.aleo {
+program cloakclub_four_2026.aleo {
     record Member {
         owner: address,
         community_id: field,
