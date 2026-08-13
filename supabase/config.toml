@@ -1,0 +1,4 @@
+project_id = "cloakclub"
+
+[functions.verify-post]
+verify_jwt = false

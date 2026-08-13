@@ -1,0 +1,8 @@
+node_modules/
+.next/
+out/
+*.log
+.env*
+!.env.example
+contracts/**/build/
+.DS_Store
